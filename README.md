@@ -27,7 +27,18 @@ Then use `scp` or SFTP to copy the binary into that folder
 Binary version
 ==============
 
+If you don't want to install Go and mess with cross-compilation and such, you can download a pre-compiled binary from here: http://goo.gl/vDsfdO
 
+To install it:
+
+ - Unzip it to a folder on your computer
+ - SSH into your Ninja Sphere and run
+  - `sudo mount -o remount,rw` to remount the filesystem as read-write
+  - `sudo mkdir /opt/ninjablocks/drivers/sphere-orvibo` to create the sphere-orvibo folder for the driver to live in
+  - `sudo chmod 755 sphere-orvibo` to make the folder writable
+  - If you're on Windows, download pscp from here: http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html . If you're on Linux, ensure `scp` is installed
+  - Run this command on your computer: `scp sphere-orvibo ninja@ninjasphere.local:/opt/ninjablocks/drivers/sphere-orvibo` (replace scp with pscp if on Windows). This copies the binary to the correct folder
+  - On your sphere, navigate to `/opt/ninjablocks/drivers/sphere-orvibo` and run `./sphere-orvibo --autostart`
 
 Running
 =======
