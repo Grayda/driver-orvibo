@@ -1,0 +1,14 @@
+{
+  "id": "photography.davidgray.sphere-orvibo",
+  "name": "sphere-orvibo",
+  "version": "0.0.1",
+  "description": "Ninja Sphere - Orvibo socket driver",
+  "main": "sphere-orvibo",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "David Gray <grayda@solidinc.org>",
+  "license": "MIT",
+  "topics": {},
+  "maxMemory": 10
+}

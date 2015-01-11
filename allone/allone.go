@@ -6,6 +6,7 @@ import (
 	"net"          // For networking stuff
 	"os"           // For exiting
 	"strings"      // For reversing strings
+	"time"
 )
 
 // Socket contains information about what sockets we've found
@@ -42,8 +43,17 @@ func PrepareSockets() {
 		fmt.Println("Local IP is:", getLocalIP())
 	}
 
-	udpAddr, _ := net.ResolveUDPAddr("udp4", ":10000") // Get our address ready for listening
-	conn, _ = net.ListenUDP("udp", udpAddr)            // Now we listen on the address we just resolved
+	udpAddr, err := net.ResolveUDPAddr("udp4", ":10000") // Get our address ready for listening
+	if err != nil {
+		fmt.Println("Resolve:", err)
+		os.Exit(1)
+	}
+	conn, err = net.ListenUDP("udp", udpAddr) // Now we listen on the address we just resolved
+	if err != nil {
+		fmt.Println("Listen:", err)
+		os.Exit(1)
+	}
+
 	go func() { Events <- EventStruct{"ready", Socket{}} }()
 }
 
@@ -53,18 +63,11 @@ func Discover() {
 
 func Subscribe() {
 	for k := range sockets { // Loop over all sockets we know about
-		//
-		//
 
-		// I know you won't read this, so here's an ugly whitespace to distract you until you fix this bug!
-		if sockets[k].Subscribed == false { // If we haven't subscribed. BUG: THIS WILL FAIL WHEN SUBSCRIPTION LAPSES. JSUT SUBSCRIBE TO ALL SOCKETS ANYWAY!!
-			//
-			//
-			//
+		if sockets[k].Subscribed == false { // If we haven't subscribed.
 			macReverse := reverseMAC(sockets[k].MACAddress)
 			fmt.Println("Sending sub message..")
 			sendMessage("6864001e636c"+sockets[k].MACAddress+twenties+macReverse+twenties, sockets[k].IP)
-
 		}
 	}
 	return
@@ -78,8 +81,18 @@ func Query() {
 	}
 }
 
+func Close() bool {
+	err := conn.Close()
+	if err != nil {
+		fmt.Println("Error closing socket:", err)
+		return false
+	}
+	return true
+
+}
+
 func CheckForMessages() { // Now we're checking for messages
-	fmt.Println("Checking for messages")
+
 	var buf [1024]byte // We want to get 1024 bytes of messages (is this enough? Need to check!)
 
 	go func() { // Rading from UDP blocks
@@ -97,6 +110,16 @@ func CheckForMessages() { // Now we're checking for messages
 
 }
 
+// ToggleState finds out if the socket is on or off, then toggles it
+func ToggleState(macAdd string) {
+	if sockets[macAdd].State == true {
+		SetState(false, macAdd)
+	} else {
+		SetState(true, macAdd)
+	}
+}
+
+// SetState sets the state of a socket, given its MAC address
 func SetState(state bool, macAdd string) {
 	sockets[macAdd].State = state
 	var statebit string
@@ -119,56 +142,60 @@ func handleMessage(message string, addr *net.UDPAddr) {
 	macStart := strings.Index(message, "accf")
 	macAdd := message[macStart:(macStart + 12)] // The MAC address of the socket responding
 
-	fmt.Println("Message:", message, "IP:", addr.IP.String(), "MAC:", macAdd, "CID:", commandID)
+	fmt.Println("Message:", message, "IP:", addr.IP.String(), "MAC:", macAdd, "CID:", commandID, "Time:", time.Now())
 	switch commandID {
 	case "7161":
 		_, ok := sockets[macAdd] // Check to see if we've already got macAdd in our array
-		fmt.Println("Added before?", ok)
+
 		if ok == false { // If we haven't added this socket yet
 			lastBit := message[(len(message) - 1):]
 			if lastBit == "00" {
 				fmt.Println("Socket is off")
 				sockets[macAdd] = &Socket{addr, false, "", macAdd, false, message} // Add the socket
-				go func() {
-					fmt.Println("Found")
-					Events <- EventStruct{"socketfound", *sockets[macAdd]}
-					fmt.Println("Found")
-				}()
+				go func() { Events <- EventStruct{"socketfound", *sockets[macAdd]} }()
 			} else {
 				fmt.Println("Socket is on")
 				sockets[macAdd] = &Socket{addr, true, "", macAdd, false, message} // Add the socket
-				go func() {
-					Events <- EventStruct{"socketfound", *sockets[macAdd]}
-				}()
-
+				go func() { Events <- EventStruct{"socketfound", *sockets[macAdd]} }()
 			}
 		} else {
-			Events <- EventStruct{"socketfound", *sockets[macAdd]}
+			go func() { Events <- EventStruct{"socketfound", *sockets[macAdd]} }()
 		}
+
 	case "636c":
 		sockets[macAdd].Subscribed = true
-		go func() {
-			Events <- EventStruct{"subscribed", *sockets[macAdd]}
-		}()
+
+		go func() { Events <- EventStruct{"subscribed", *sockets[macAdd]} }()
 
 	case "7274": // We've queried our socket, this is the data back
 		// Our name starts after the fourth 202020202020
 		strName := message[140:172]
-		fmt.Println("!!!!!!!!!! NAME:", strName)
 		// If no name has been set, we get 32 bytes of F back, so
 		// we create a generic name so our socket name won't be spaces
 		// And our name is 32 bytes long.
 		strDecName, _ := hex.DecodeString(strName[0:14])
-		if strName[0:18] == "ffffffffffffffff" {
+		fmt.Println("HEX Name is:", strName)
+		if strName == "20202020202020202020202020202020" {
 			fmt.Println("Blank name found")
-		}
-		// Convert back to text and assign
-		sockets[macAdd].Name = string(strDecName)
+			sockets[macAdd].Name = "Socket " + macAdd
+		} else {
+			// Convert back to text and assign
+			sockets[macAdd].Name = string(strDecName)
 
-		go func() {
-			Events <- EventStruct{"queried", *sockets[macAdd]}
-		}()
-		break
+		}
+
+		Events <- EventStruct{"queried", *sockets[macAdd]}
+
+	case "7366":
+		lastBit := message[(len(message) - 1):]
+		if lastBit == "00" {
+			sockets[macAdd].State = false
+		} else {
+			sockets[macAdd].State = true
+		}
+
+		Events <- EventStruct{"statechanged", *sockets[macAdd]}
+
 	}
 }
 func sendMessage(msg string, ip *net.UDPAddr) {
@@ -194,15 +221,20 @@ func sendMessage(msg string, ip *net.UDPAddr) {
 func broadcastMessage(msg string) {
 	fmt.Println("Broadcasting message:", msg, "to", net.IPv4bcast.String()+":10000")
 	udpAddr, err := net.ResolveUDPAddr("udp4", net.IPv4bcast.String()+":10000")
-
+	if err != nil {
+		fmt.Println("ERROR!:", err)
+		os.Exit(1)
+	}
 	buf, _ := hex.DecodeString(msg)
 
 	// If we've got an error
 	if err != nil {
 		fmt.Println("ERROR!:", err)
+		os.Exit(1)
 	}
-	_, _ = conn.WriteToUDP(buf, udpAddr)
 
+	_, _ = conn.WriteToUDP(buf, udpAddr)
+	return
 }
 
 // Okay, so this is a clusterfuck, of sorts.
@@ -249,4 +281,8 @@ func reverseMAC(mac string) string {
 		s[i], s[j] = s[j], s[i]
 	}
 	return hex.EncodeToString(s)
+}
+
+func doLog(text string) {
+	fmt.Println(time.Now().String() + ": " + text)
 }
