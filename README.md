@@ -62,13 +62,17 @@ Bugs / Known Issues
  - This driver seems to only find the first socket and then give up. I'm looking into this, pull requests and fix-ups welcomed
  - Needs moar comments. Next version should have more comments
  - Don't use this driver for anything mission critical. If you want to launch nukes or take over the world, be proactive and do it yourself, don't let a $25 WiFi socket do the dirty work. Shame on you.
+ - State isn't 100% correctly set yet -- when you view the thing in the Sphere app, it appears as off, even if it's on. This only changes when you toggle the socket
+
 
 To-Do
-=====
+=======
 
- - Make this driver work with the Orvibo AllOne IR blaster. That might take a bit, as I need to study up on my Ninja Sphere stuff first to work out if this is currently possible
+
+- Make this driver work with the Orvibo AllOne IR blaster. That might take a bit, as I need to study up on my Ninja Sphere stuff first to work out if this is currently possible
  - FIX ALL THE BUGS!
  - Make this driver more reliable
+ - Add state code so you can see if it's on or off
 
  Helping out
  ===========
