@@ -53,11 +53,13 @@ func (l *OrviboSocket) GetDriver() ninja.Driver {
 
 func (l *OrviboSocket) SetOnOff(state bool) error {
 	allone.SetState(state, l.Socket.MACAddress)
+	l.onOffChannel.SendState(state)
 	return nil
 }
 
 func (l *OrviboSocket) ToggleOnOff() error {
 	allone.ToggleState(l.Socket.MACAddress)
+	l.onOffChannel.SendState(l.Socket.State)
 	return nil
 }
 
@@ -77,7 +79,7 @@ func (l *OrviboSocket) SetName(name *string) (*string, error) {
 		safe = safe[0:16]
 	}
 
-	log.Printf("Pretending we can only set 5 lowercase alphanum. Name now: %s", safe)
+	log.Printf("We can only set 5 lowercase alphanum. Name now: %s", safe)
 	l.Socket.Name = safe
 	l.sendEvent("renamed", safe)
 

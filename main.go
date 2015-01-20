@@ -6,7 +6,6 @@ import (
 	"github.com/Grayda/sphere-orvibo/allone"
 	"os"
 	"os/signal"
-	"time"
 )
 
 // For those playing along at home who have as little idea about driver development on the Sphere as I did:
@@ -16,9 +15,6 @@ import (
 // and setting of the name.
 
 func main() {
-	fmt.Println("Yo")
-	// In case it crash loops =))
-	time.Sleep(time.Second * 1)
 	// Prepare here, because if Start is called again (which it was, during testing?), we'd get "address in use"
 	allone.PrepareSockets()
 	// Now that we're prepared, we can create our driver

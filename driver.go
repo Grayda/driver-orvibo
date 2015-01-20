@@ -1,38 +1,34 @@
 package main
 
 import (
-	"fmt"
-	"log"
-	"time"
+	"fmt"  // For outputting stuff to the screen
+	"log"  // Similar thing, I suppose?
+	"time" // Used as part of "setInterval" and for pausing code to allow for data to come back
 
-	"github.com/Grayda/sphere-orvibo/allone"
-	"github.com/ninjasphere/go-ninja/api"
-
+	"github.com/Grayda/sphere-orvibo/allone" // The magic part that lets us control sockets
+	"github.com/ninjasphere/go-ninja/api"    // Ninja Sphere API
 	"github.com/ninjasphere/go-ninja/support"
 )
 
+// package.json is required, otherwise the app just exits and doesn't show any output
 var info = ninja.LoadModuleInfo("./package.json")
+
+// Are we ready to rock?
 var ready = false
 
-/*model.Module{
-ID:          "com.ninjablocks.OrviboSocket",
-Name:        "Fake Driver",
-Version:     "1.0.2",
-Description: "Just used to test go-ninja",
-Author:      "Elliot Shepherd <elliot@ninjablocks.com>",
-License:     "MIT",
-}*/
-
+// OrviboDriver holds info about our driver, including our configuration
 type OrviboDriver struct {
 	support.DriverSupport
 	config *OrviboDriverConfig
 }
 
+// OrviboDriverConfig holds config info. I don't think it's extensively used in this driver.
 type OrviboDriverConfig struct {
 	Initialised    bool
 	NumberOfLights int
 }
 
+// No config provided? Set up some defaults
 func defaultConfig() *OrviboDriverConfig {
 	return &OrviboDriverConfig{
 		Initialised:    false,
@@ -40,24 +36,30 @@ func defaultConfig() *OrviboDriverConfig {
 	}
 }
 
+// NewDriver does what it says on the tin: makes a new driver for us to run.
 func NewDriver() (*OrviboDriver, error) {
 
+	// Copy (?) our OrviboDriver into this variable instead of making a new copy
 	driver := &OrviboDriver{}
 
+	// Initialize our driver. Throw back an error if necessary. Remember, := is basically a short way of saying "var blah string = 'abcd'"
 	err := driver.Init(info)
 	if err != nil {
 		log.Fatalf("Failed to initialize Orvibo driver: %s", err)
 	}
 
+	// Now we export the driver so the Sphere can find it (?)
 	err = driver.Export(driver)
 	if err != nil {
 		log.Fatalf("Failed to export Orvibo driver: %s", err)
 		allone.Close()
 	}
 
+	// NewDriver returns two things, OrviboDriver, and an error if present
 	return driver, nil
 }
 
+// Start is where the fun and magic happens! The driver is fired up and starts finding sockets
 func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 	log.Printf("Driver Starting with config %v", config)
 
@@ -65,64 +67,70 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 	if !d.config.Initialised {
 		d.config = defaultConfig()
 	}
-	var firstDiscover, firstSubscribe, firstQuery, autoDiscover, resubscribe chan bool
+
+	// These are our SetIntervals that run. To cancel one, simply send "<- true" to it (e.g. autoDiscover <- true)
+	var autoDiscover, resubscribe chan bool
+
 	var device *OrviboSocket
 
 	d.SendEvent("config", config)
-	go func() {
+
+	for {
+
 		allone.CheckForMessages()
-		for {
-			allone.CheckForMessages()
-			select {
-			case msg := <-allone.Events:
-				fmt.Println("!!!T Type:", msg.Name)
-				switch msg.Name {
-				case "ready":
 
-					log.Printf("Ready to go!")
-					firstDiscover = setInterval(allone.Discover, time.Second)
-					autoDiscover = setInterval(allone.Discover, time.Minute)
-					resubscribe = setInterval(allone.Subscribe, time.Minute*3)
+		select {
+		case msg := <-allone.Events:
+			fmt.Println("Event:", msg.Name, "For socket:", msg.SocketInfo.MACAddress)
+			switch msg.Name {
+			case "ready":
 
-				case "socketfound":
-					firstDiscover <- true // Stop our setInterval
-					fmt.Println("We have a socket!")
+				log.Printf("Ready to go!")
 
-					if msg.SocketInfo.Subscribed == false {
-						firstSubscribe = setInterval(allone.Subscribe, time.Second)
-					}
-					allone.CheckForMessages()
-					time.Sleep(time.Second)
+				autoDiscover = setInterval(allone.Discover, time.Minute)
+				resubscribe = setInterval(allone.Subscribe, time.Minute*3)
 
-				case "subscribed":
-					go func() { firstSubscribe <- true }()
-					fmt.Println("We're subscribed!")
-					time.Sleep(time.Millisecond * 100)
-					firstQuery = setInterval(allone.Query, time.Second)
-					allone.CheckForMessages()
-				case "queried":
-					firstQuery <- true
-					fmt.Println("We've queried. Name is:", msg.SocketInfo.Name)
-					device = NewOrviboSocket(d, msg.SocketInfo)
-					device.Socket.Name = msg.Name
-					err := d.Conn.ExportDevice(device)
-					err = d.Conn.ExportChannel(device, device.onOffChannel, "on-off")
-					if err != nil {
-						log.Fatalf("Failed to export Orvibo socket on off channel %s: %s", msg.SocketInfo.MACAddress, err)
-						allone.Close()
-					}
-					allone.Discover()
-					allone.Subscribe()
-					allone.CheckForMessages()
-				case "statechanged":
-					fmt.Println("State changed to:", msg.SocketInfo.State)
-					allone.CheckForMessages()
+			case "socketfound":
+
+				fmt.Println("We have a socket!")
+				// firstSubscribe = setInterval(allone.Subscribe, time.Second)
+				allone.Subscribe()
+
+			case "subscribed":
+				fmt.Println("We're subscribed!")
+
+				allone.Query()
+				continue
+			case "queried":
+
+				fmt.Println("We've queried. Name is:", msg.SocketInfo.Name)
+				device = NewOrviboSocket(d, msg.SocketInfo)
+				fmt.Println("Here")
+				device.Socket.Name = msg.Name
+				device.Socket.State = msg.SocketInfo.State
+				err := d.Conn.ExportDevice(device)
+				err = d.Conn.ExportChannel(device, device.onOffChannel, "on-off")
+
+				if err != nil {
+					log.Fatalf("Failed to export Orvibo socket on off channel %s: %s", msg.SocketInfo.MACAddress, err)
+					allone.Close()
 				}
+				device.onOffChannel.SendState(msg.SocketInfo.State)
+				allone.Subscribe()
+			case "statechanged":
+				fmt.Println("State changed to:", msg.SocketInfo.State)
+				device.Socket.State = msg.SocketInfo.State
+				device.onOffChannel.SendState(msg.SocketInfo.State)
+			case "quit":
+				fmt.Println("Quitting")
+				autoDiscover <- true
+				resubscribe <- true
 			}
-			allone.CheckForMessages()
 
 		}
-	}()
+		allone.CheckForMessages()
+		continue
+	}
 
 	return d.SendEvent("config", config)
 }
