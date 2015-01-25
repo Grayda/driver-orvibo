@@ -150,12 +150,12 @@ func handleMessage(message string, addr *net.UDPAddr) {
 		if ok == false { // If we haven't added this socket yet
 			lastBit := message[(len(message) - 1):]
 			if lastBit == "00" {
-				fmt.Println("Socket is off")
 				sockets[macAdd] = &Socket{addr, false, "", macAdd, false, message} // Add the socket
+				fmt.Printf("Sockets: %+v\n", &sockets)
 				Events <- EventStruct{"socketfound", *sockets[macAdd]}
 			} else {
-				fmt.Println("Socket is on")
 				sockets[macAdd] = &Socket{addr, true, "", macAdd, false, message} // Add the socket
+				fmt.Printf("Sockets: %+v\n", &sockets)
 				Events <- EventStruct{"socketfound", *sockets[macAdd]}
 			}
 		} else {
@@ -184,7 +184,7 @@ func handleMessage(message string, addr *net.UDPAddr) {
 			sockets[macAdd].Name = string(strDecName)
 
 		}
-
+		fmt.Println("Queried", string(strDecName))
 		Events <- EventStruct{"queried", *sockets[macAdd]}
 
 	case "7366":

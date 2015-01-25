@@ -73,6 +73,8 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 
 	var device *OrviboSocket
 
+	// Because we'll never reach the end of the for loop (in theory),
+	// we run SendEvent here.
 	d.SendEvent("config", config)
 
 	for {
@@ -104,19 +106,21 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 			case "queried":
 
 				fmt.Println("We've queried. Name is:", msg.SocketInfo.Name)
+
 				device = NewOrviboSocket(d, msg.SocketInfo)
-				fmt.Println("Here")
 				device.Socket.Name = msg.Name
 				device.Socket.State = msg.SocketInfo.State
-				err := d.Conn.ExportDevice(device)
-				err = d.Conn.ExportChannel(device, device.onOffChannel, "on-off")
-
-				if err != nil {
-					log.Fatalf("Failed to export Orvibo socket on off channel %s: %s", msg.SocketInfo.MACAddress, err)
-					allone.Close()
-				}
-				device.onOffChannel.SendState(msg.SocketInfo.State)
+				fmt.Println("1")
+				_ = d.Conn.ExportDevice(device)
+				fmt.Println("2")
+				_ = d.Conn.ExportChannel(device, device.onOffChannel, "on-off")
+				fmt.Println("3")
+				defer device.onOffChannel.SendState(msg.SocketInfo.State)
+				fmt.Println("4")
+				allone.Discover()
 				allone.Subscribe()
+				return d.SendEvent("config", config)
+				
 			case "statechanged":
 				fmt.Println("State changed to:", msg.SocketInfo.State)
 				device.Socket.State = msg.SocketInfo.State
@@ -125,6 +129,8 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 				fmt.Println("Quitting")
 				autoDiscover <- true
 				resubscribe <- true
+			default:
+				continue
 			}
 
 		}
