@@ -1,7 +1,7 @@
 {
   "id": "photography.davidgray.sphere-orvibo",
   "name": "sphere-orvibo",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "Ninja Sphere - Orvibo socket driver",
   "main": "sphere-orvibo",
   "scripts": {
