@@ -27,15 +27,15 @@ Then use `scp` or SFTP to copy the binary into that folder
 Binary version
 ==============
 
-If you don't want to install Go and mess with cross-compilation and such, you can download a pre-compiled binary from here: http://goo.gl/vDsfdO
+If you don't want to install Go and mess with cross-compilation and such, you can download a pre-compiled binary from here: https://github.com/Grayda/sphere-orvibo/releases
 
 To install it:
 
- - Unzip it to a folder on your computer
+ - Download both package.json and sphere-orvibo to your computer
  - SSH into your Ninja Sphere and run
   - `sudo mount -o remount,rw` to remount the filesystem as read-write
   - `sudo mkdir /opt/ninjablocks/drivers/sphere-orvibo` to create the sphere-orvibo folder for the driver to live in
-  - `sudo chmod 755 sphere-orvibo` to make the folder writable
+  - `sudo chmod 775 sphere-orvibo` to make the folder writable
   - If you're on Windows, download pscp from here: http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html . If you're on Linux, ensure `scp` is installed
   - Run this command on your computer: `scp sphere-orvibo ninja@ninjasphere.local:/opt/ninjablocks/drivers/sphere-orvibo` (replace scp with pscp if on Windows). This copies the binary to the correct folder
   - On your sphere, navigate to `/opt/ninjablocks/drivers/sphere-orvibo` and run `./sphere-orvibo --autostart`
@@ -47,9 +47,7 @@ There are two ways of running the driver. See https://github.com/ninjasphere/dri
 
 `/opt/ninjablocks/drivers/sphere-orvibo/sphere-orvibo --autostart`
 
-The binary will run and you should see lots of output. In particular, you should look out for "queried":
-
-> !!!T Type: queried
+The binary will run and you should see lots of output. Most of it will be debugging nonsense. In particular, you should look out for "queried":
 
 > We've queried. Name is: My Socket
 
@@ -59,7 +57,7 @@ Bugs / Known Issues
 ===================
 
  - This driver is still in alpha and may not reliably detect your socket. If it gets stuck anywhere, Ctrl+C out of it and run it again.
- - This driver seems to only find the first socket and then give up. I'm looking into this, pull requests and fix-ups welcomed
+ - ~~This driver seems to only find the first socket and then give up. I'm looking into this, pull requests and fix-ups welcomed~~
  - Needs moar comments. Next version should have more comments
  - Don't use this driver for anything mission critical. If you want to launch nukes or take over the world, be proactive and do it yourself, don't let a $25 WiFi socket do the dirty work. Shame on you.
  - State isn't 100% correctly set yet -- when you view the thing in the Sphere app, it appears as off, even if it's on. This only changes when you toggle the socket
