@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/Grayda/sphere-orvibo/allone"
+	"github.com/Grayda/go-orvibo"
 	"github.com/ninjasphere/go-ninja/api"
 	"github.com/ninjasphere/go-ninja/channels"
 	"github.com/ninjasphere/go-ninja/model"
@@ -17,17 +17,17 @@ type OrviboSocket struct {
 	info         *model.Device
 	sendEvent    func(event string, payload interface{}) error
 	onOffChannel *channels.OnOffChannel
-	Socket       allone.Socket
+	Device       orvibo.Device
 }
 
-func NewOrviboSocket(driver ninja.Driver, id allone.Socket) *OrviboSocket {
+func NewOrviboDevice(driver ninja.Driver, id orvibo.Device) *OrviboSocket {
 	name := id.Name
 
-	socket := &OrviboSocket{
+	device := &OrviboSocket{
 		driver: driver,
-		Socket: id,
+		Device: id,
 		info: &model.Device{
-			NaturalID:     fmt.Sprintf("socket%d", id.MACAddress),
+			NaturalID:     fmt.Sprintf("socket%s", id.MACAddress),
 			NaturalIDType: "socket",
 			Name:          &name,
 			Signatures: &map[string]string{
@@ -39,8 +39,8 @@ func NewOrviboSocket(driver ninja.Driver, id allone.Socket) *OrviboSocket {
 		},
 	}
 
-	socket.onOffChannel = channels.NewOnOffChannel(socket)
-	return socket
+	device.onOffChannel = channels.NewOnOffChannel(device)
+	return device
 }
 
 func (l *OrviboSocket) GetDeviceInfo() *model.Device {
@@ -52,14 +52,16 @@ func (l *OrviboSocket) GetDriver() ninja.Driver {
 }
 
 func (l *OrviboSocket) SetOnOff(state bool) error {
-	allone.SetState(state, l.Socket.MACAddress)
+	fmt.Println("Setting state to", state)
+	orvibo.SetState(l.Device.MACAddress, state)
 	l.onOffChannel.SendState(state)
 	return nil
 }
 
 func (l *OrviboSocket) ToggleOnOff() error {
-	allone.ToggleState(l.Socket.MACAddress)
-	l.onOffChannel.SendState(l.Socket.State)
+	fmt.Println("Toggling state")
+	orvibo.ToggleState(l.Device.MACAddress)
+	l.onOffChannel.SendState(l.Device.State)
 	return nil
 }
 
@@ -80,7 +82,7 @@ func (l *OrviboSocket) SetName(name *string) (*string, error) {
 	}
 
 	log.Printf("We can only set 5 lowercase alphanum. Name now: %s", safe)
-	l.Socket.Name = safe
+	l.Device.Name = safe
 	l.sendEvent("renamed", safe)
 
 	return &safe, nil

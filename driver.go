@@ -1,28 +1,33 @@
 package main
 
 import (
-	"fmt"  // For outputting stuff to the screen
+	"fmt"                         // For outputting stuff to the screen
+	"github.com/Grayda/go-orvibo" // The magic part that lets us control sockets
+
+	"github.com/davecgh/go-spew/spew"     // For neatly outputting stuff
+	"github.com/ninjasphere/go-ninja/api" // Ninja Sphere API
+	"github.com/ninjasphere/go-ninja/support"
 	"log"  // Similar thing, I suppose?
 	"time" // Used as part of "setInterval" and for pausing code to allow for data to come back
-
-	"github.com/Grayda/sphere-orvibo/allone" // The magic part that lets us control sockets
-	"github.com/ninjasphere/go-ninja/api"    // Ninja Sphere API
-	"github.com/ninjasphere/go-ninja/support"
 )
 
 // package.json is required, otherwise the app just exits and doesn't show any output
 var info = ninja.LoadModuleInfo("./package.json")
+var serial string
 
 // Are we ready to rock?
 var ready = false
+var started = false // Stops us from running theloop twice
+var device = make(map[int]*OrviboSocket)
 
 // OrviboDriver holds info about our driver, including our configuration
 type OrviboDriver struct {
 	support.DriverSupport
 	config *OrviboDriverConfig
+	conn   *ninja.Connection
 }
 
-// OrviboDriverConfig holds config info. I don't think it's extensively used in this driver.
+// OrviboDriverConfig holds config info. I don't think it's extensively used in this driver?
 type OrviboDriverConfig struct {
 	Initialised    bool
 	NumberOfLights int
@@ -39,7 +44,7 @@ func defaultConfig() *OrviboDriverConfig {
 // NewDriver does what it says on the tin: makes a new driver for us to run.
 func NewDriver() (*OrviboDriver, error) {
 
-	// Copy (?) our OrviboDriver into this variable instead of making a new copy
+	// Make a new OrviboDriver. Ampersand means to make a new copy, not reference the parent one (so A = new B instead of A = new B, C = A)
 	driver := &OrviboDriver{}
 
 	// Initialize our driver. Throw back an error if necessary. Remember, := is basically a short way of saying "var blah string = 'abcd'"
@@ -52,7 +57,6 @@ func NewDriver() (*OrviboDriver, error) {
 	err = driver.Export(driver)
 	if err != nil {
 		log.Fatalf("Failed to export Orvibo driver: %s", err)
-		allone.Close()
 	}
 
 	// NewDriver returns two things, OrviboDriver, and an error if present
@@ -68,100 +72,102 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 		d.config = defaultConfig()
 	}
 
-	// These are our SetIntervals that run. To cancel one, simply send "<- true" to it (e.g. autoDiscover <- true)
-	var autoDiscover, resubscribe chan bool
-
-	var device *OrviboSocket
-
-	// Because we'll never reach the end of the for loop (in theory),
-	// we run SendEvent here.
-	d.SendEvent("config", config)
-
-	for {
-
-		allone.CheckForMessages()
-
-		select {
-		case msg := <-allone.Events:
-			fmt.Println("Event:", msg.Name, "For socket:", msg.SocketInfo.MACAddress)
-			switch msg.Name {
-			case "ready":
-
-				log.Printf("Ready to go!")
-
-				autoDiscover = setInterval(allone.Discover, time.Minute)
-				resubscribe = setInterval(allone.Subscribe, time.Minute*3)
-
-			case "socketfound":
-
-				fmt.Println("We have a socket!")
-				// firstSubscribe = setInterval(allone.Subscribe, time.Second)
-				allone.Subscribe()
-
-			case "subscribed":
-				fmt.Println("We're subscribed!")
-
-				allone.Query()
-				continue
-			case "queried":
-
-				fmt.Println("We've queried. Name is:", msg.SocketInfo.Name)
-
-				device = NewOrviboSocket(d, msg.SocketInfo)
-				device.Socket.Name = msg.Name
-				device.Socket.State = msg.SocketInfo.State
-				fmt.Println("1")
-				_ = d.Conn.ExportDevice(device)
-				fmt.Println("2")
-				_ = d.Conn.ExportChannel(device, device.onOffChannel, "on-off")
-				fmt.Println("3")
-				defer device.onOffChannel.SendState(msg.SocketInfo.State)
-				fmt.Println("4")
-				allone.Discover()
-				allone.Subscribe()
-				return d.SendEvent("config", config)
-				
-			case "statechanged":
-				fmt.Println("State changed to:", msg.SocketInfo.State)
-				device.Socket.State = msg.SocketInfo.State
-				device.onOffChannel.SendState(msg.SocketInfo.State)
-			case "quit":
-				fmt.Println("Quitting")
-				autoDiscover <- true
-				resubscribe <- true
-			default:
-				continue
-			}
-
-		}
-		allone.CheckForMessages()
-		continue
+	if started == false {
+		theloop(d, config)
 	}
 
 	return d.SendEvent("config", config)
 }
 
+func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
+	go func() {
+		started = true
+		fmt.Println("Calling theloop")
+		// These are our SetIntervals that run. To cancel one, simply send "<- true" to it (e.g. autoDiscover <- true)
+		var autoDiscover, resubscribe chan bool
+
+		ready, err := orvibo.Prepare() // You ready?
+		if ready == true {             // Yep! Let's do this!
+			// Because we'll never reach the end of the for loop (in theory),
+			// we run SendEvent here.
+
+			autoDiscover = setInterval(orvibo.Discover, time.Minute)
+			resubscribe = setInterval(orvibo.Subscribe, time.Minute*3)
+			orvibo.Discover() // Discover all sockets
+
+			for { // Loop forever
+				select { // This lets us do non-blocking channel reads. If we have a message, process it. If not, check for UDP data and loop
+				case msg := <-orvibo.Events:
+					switch msg.Name {
+					case "existingsocketfound":
+						fallthrough
+					case "socketfound":
+						fmt.Println("Socket found! MAC address is", msg.DeviceInfo.MACAddress)
+						orvibo.Subscribe() // Subscribe to any unsubscribed sockets
+						orvibo.Query()     // And query any unqueried sockets
+					case "subscribed":
+						if msg.DeviceInfo.Subscribed == false {
+
+							fmt.Println("Subscription successful!")
+							orvibo.Devices[msg.DeviceInfo.MACAddress].Subscribed = true
+							orvibo.Query()
+							fmt.Println("Query called")
+
+						}
+						orvibo.Query()
+					case "queried":
+
+						if msg.DeviceInfo.Queried == false {
+
+							fmt.Println("==========YES?", msg.DeviceInfo.ID)
+							fmt.Println("A")
+							device[msg.DeviceInfo.ID] = NewOrviboDevice(d, msg.DeviceInfo)
+
+							_ = d.Conn.ExportDevice(device[msg.DeviceInfo.ID])
+							_ = d.Conn.ExportChannel(device[msg.DeviceInfo.ID], device[msg.DeviceInfo.ID].onOffChannel, "on-off")
+							device[msg.DeviceInfo.ID].Device.Name = msg.Name
+							device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+							fmt.Println("B")
+
+							fmt.Println("C")
+
+							fmt.Println("D")
+							spew.Dump(msg.DeviceInfo)
+							orvibo.Devices[msg.DeviceInfo.MACAddress].Queried = true
+
+							device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
+
+							fmt.Println("E")
+
+						}
+
+					case "statechanged":
+						fmt.Println("State changed to:", msg.DeviceInfo.State)
+						if msg.DeviceInfo.Queried == true {
+							device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+							device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
+						}
+					case "quit":
+						autoDiscover <- true
+						resubscribe <- true
+					}
+				default:
+					orvibo.CheckForMessages()
+				}
+
+			}
+		} else {
+			fmt.Println("Error:", err)
+
+		}
+
+	}()
+	return nil
+}
+
 func (d *OrviboSocket) Stop() error {
-	allone.Close()
 	return fmt.Errorf("This driver does not support being stopped. YOU HAVE NO POWER HERE.")
 
-}
-
-type In struct {
-	Name string
-}
-
-type Out struct {
-	Age  int
-	Name string
-}
-
-func (d *OrviboDriver) Blarg(in *In) (*Out, error) {
-	log.Printf("GOT INCOMING! %s", in.Name)
-	return &Out{
-		Name: in.Name,
-		Age:  30,
-	}, nil
 }
 
 func setInterval(what func(), delay time.Duration) chan bool {
