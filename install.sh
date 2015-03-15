@@ -45,7 +45,7 @@ else
 fi
 
 echo -n "Copying driver to Sphere on $NSIP (this may take a minute).. "
-sshpass -p $NSPW scp $DRIVERNAME $NSUN@$NSIP:/data/sphere/user-autostart/drivers/$DRIVERNAME/$DRIVERNAME > /dev/stdout
+sshpass -p $NSPW scp $DRIVERNAME $NSUN@$NSIP:/data/sphere/user-autostart/drivers/$DRIVERNAME/$DRIVERNAME
 if [ "$?" != "0" ] ; then
   whiptail --title "Installation Failed" --backtitle "$DRIVERNAME installer $SCRIPTVERSION" --msgbox "Unable to copy $DRIVERNAME to $NSIP. Please contact the author on $SUPPORTLINK for assistance" 0 0
   exit
@@ -62,6 +62,7 @@ else
   echo "Done!"
 fi
 echo -n "Starting $DRIVERNAME on the Sphere.. "
+sshpass -p $NSPW ssh $NSUN@$NSIP "source /etc/profile; chmod +x /data/sphere/user-autostart/drivers/$DRIVERNAME/$DRIVERNAME"
 sshpass -p $NSPW ssh $NSUN@$NSIP "source /etc/profile; NSERVICE_QUIET=true nservice $DRIVERNAME start"
 if [ "$?" != "0" ] ; then
   whiptail --title "Installation Failed" --backtitle "$DRIVERNAME installer $SCRIPTVERSION" --msgbox "Unable to start $DRIVERNAME on $NSIP. Please contact the author on $SUPPORTLINK for assistance" 0 0
