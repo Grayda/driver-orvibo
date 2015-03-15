@@ -4,7 +4,7 @@ import (
 	"fmt"                         // For outputting stuff to the screen
 	"github.com/Grayda/go-orvibo" // The magic part that lets us control sockets
 
-	"github.com/davecgh/go-spew/spew"     // For neatly outputting stuff
+	//	"github.com/davecgh/go-spew/spew"     // For neatly outputting stuff
 	"github.com/ninjasphere/go-ninja/api" // Ninja Sphere API
 	"github.com/ninjasphere/go-ninja/support"
 	"log"  // Similar thing, I suppose?
@@ -18,7 +18,7 @@ var serial string
 // Are we ready to rock?
 var ready = false
 var started = false // Stops us from running theloop twice
-var device = make(map[int]*OrviboSocket)
+var device = make(map[int]*OrviboDevice)
 
 // OrviboDriver holds info about our driver, including our configuration
 type OrviboDriver struct {
@@ -36,8 +36,7 @@ type OrviboDriverConfig struct {
 // No config provided? Set up some defaults
 func defaultConfig() *OrviboDriverConfig {
 	return &OrviboDriverConfig{
-		Initialised:    false,
-		NumberOfLights: 0,
+		Initialised: false,
 	}
 }
 
@@ -118,26 +117,14 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 					case "queried":
 
 						if msg.DeviceInfo.Queried == false {
-
-							fmt.Println("==========YES?", msg.DeviceInfo.ID)
-							fmt.Println("A")
 							device[msg.DeviceInfo.ID] = NewOrviboDevice(d, msg.DeviceInfo)
 
 							_ = d.Conn.ExportDevice(device[msg.DeviceInfo.ID])
 							_ = d.Conn.ExportChannel(device[msg.DeviceInfo.ID], device[msg.DeviceInfo.ID].onOffChannel, "on-off")
 							device[msg.DeviceInfo.ID].Device.Name = msg.Name
 							device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
-							fmt.Println("B")
-
-							fmt.Println("C")
-
-							fmt.Println("D")
-							spew.Dump(msg.DeviceInfo)
 							orvibo.Devices[msg.DeviceInfo.MACAddress].Queried = true
-
 							device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
-
-							fmt.Println("E")
 
 						}
 
@@ -165,7 +152,7 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 	return nil
 }
 
-func (d *OrviboSocket) Stop() error {
+func (d *OrviboDriver) Stop() error {
 	return fmt.Errorf("This driver does not support being stopped. YOU HAVE NO POWER HERE.")
 
 }

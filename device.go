@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// OrviboSocket holds info about our socket.
-type OrviboSocket struct {
+// OrviboDevice holds info about our socket.
+type OrviboDevice struct {
 	driver       ninja.Driver
 	info         *model.Device
 	sendEvent    func(event string, payload interface{}) error
@@ -20,10 +20,10 @@ type OrviboSocket struct {
 	Device       orvibo.Device
 }
 
-func NewOrviboDevice(driver ninja.Driver, id orvibo.Device) *OrviboSocket {
+func NewOrviboDevice(driver ninja.Driver, id orvibo.Device) *OrviboDevice {
 	name := id.Name
 
-	device := &OrviboSocket{
+	device := &OrviboDevice{
 		driver: driver,
 		Device: id,
 		info: &model.Device{
@@ -32,7 +32,7 @@ func NewOrviboDevice(driver ninja.Driver, id orvibo.Device) *OrviboSocket {
 			Name:          &name,
 			Signatures: &map[string]string{
 				"ninja:manufacturer": "Orvibo",
-				"ninja:productName":  "OrviboSocket",
+				"ninja:productName":  "OrviboDevice",
 				"ninja:productType":  "Socket",
 				"ninja:thingType":    "socket",
 			},
@@ -43,36 +43,36 @@ func NewOrviboDevice(driver ninja.Driver, id orvibo.Device) *OrviboSocket {
 	return device
 }
 
-func (l *OrviboSocket) GetDeviceInfo() *model.Device {
-	return l.info
+func (d *OrviboDevice) GetDeviceInfo() *model.Device {
+	return d.info
 }
 
-func (l *OrviboSocket) GetDriver() ninja.Driver {
-	return l.driver
+func (d *OrviboDevice) GetDriver() ninja.Driver {
+	return d.driver
 }
 
-func (l *OrviboSocket) SetOnOff(state bool) error {
+func (d *OrviboDevice) SetOnOff(state bool) error {
 	fmt.Println("Setting state to", state)
-	orvibo.SetState(l.Device.MACAddress, state)
-	l.onOffChannel.SendState(state)
+	orvibo.SetState(d.Device.MACAddress, state)
+	d.onOffChannel.SendState(state)
 	return nil
 }
 
-func (l *OrviboSocket) ToggleOnOff() error {
+func (d *OrviboDevice) ToggleOnOff() error {
 	fmt.Println("Toggling state")
-	orvibo.ToggleState(l.Device.MACAddress)
-	l.onOffChannel.SendState(l.Device.State)
+	orvibo.ToggleState(d.Device.MACAddress)
+	d.onOffChannel.SendState(d.Device.State)
 	return nil
 }
 
-func (l *OrviboSocket) SetEventHandler(sendEvent func(event string, payload interface{}) error) {
-	l.sendEvent = sendEvent
+func (d *OrviboDevice) SetEventHandler(sendEvent func(event string, payload interface{}) error) {
+	d.sendEvent = sendEvent
 }
 
 var reg, _ = regexp.Compile("[^a-z0-9]")
 
 // Exported by service/device schema
-func (l *OrviboSocket) SetName(name *string) (*string, error) {
+func (d *OrviboDevice) SetName(name *string) (*string, error) {
 
 	log.Printf("Setting device name to %s", *name)
 
@@ -82,8 +82,8 @@ func (l *OrviboSocket) SetName(name *string) (*string, error) {
 	}
 
 	log.Printf("We can only set 5 lowercase alphanum. Name now: %s", safe)
-	l.Device.Name = safe
-	l.sendEvent("renamed", safe)
+	d.Device.Name = safe
+	d.sendEvent("renamed", safe)
 
 	return &safe, nil
 }
