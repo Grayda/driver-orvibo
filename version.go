@@ -1,4 +1,4 @@
 package main
 
 // Version of our driver
-const Version = "0.5.0"
+const Version = "0.5.1"
