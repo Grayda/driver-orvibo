@@ -17,6 +17,10 @@ function uPrompt { # Prompts the user for vaious information, such as hostname o
   NSPW=$(whiptail --nocancel --backtitle "$AUTHORNAME's $DRIVERNAME helper script" --inputbox "Enter the password for your Ninja Sphere " 0 0 $DEFAULTPASSWORD 3>&1 1>&2 2>&3)
 }
 
+function saveOptions {
+  
+}
+
 function dBuild { # Sets env variables and builds the driver
   echo -n "Setting environment variables.. "
   export GOOS=linux
