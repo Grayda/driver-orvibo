@@ -6,6 +6,7 @@ import (
 
 	//	"github.com/davecgh/go-spew/spew"     // For neatly outputting stuff
 	"github.com/ninjasphere/go-ninja/api" // Ninja Sphere API
+
 	"github.com/ninjasphere/go-ninja/support"
 	"log"  // Similar thing, I suppose?
 	"time" // Used as part of "setInterval" and for pausing code to allow for data to come back
@@ -48,12 +49,14 @@ func NewDriver() (*OrviboDriver, error) {
 
 	// Initialize our driver. Throw back an error if necessary. Remember, := is basically a short way of saying "var blah string = 'abcd'"
 	err := driver.Init(info)
+
 	if err != nil {
 		log.Fatalf("Failed to initialize Orvibo driver: %s", err)
 	}
 
 	// Now we export the driver so the Sphere can find it (?)
 	err = driver.Export(driver)
+	fmt.Println("Here")
 	if err != nil {
 		log.Fatalf("Failed to export Orvibo driver: %s", err)
 	}
@@ -67,6 +70,7 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 	log.Printf("Driver Starting with config %v", config)
 
 	d.config = config
+
 	if !d.config.Initialised {
 		d.config = defaultConfig()
 	}
