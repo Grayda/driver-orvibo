@@ -6,7 +6,7 @@ import (
 
 	//	"github.com/davecgh/go-spew/spew"     // For neatly outputting stuff
 	"github.com/ninjasphere/go-ninja/api" // Ninja Sphere API
-
+	"github.com/ninjasphere/go-ninja/model"
 	"github.com/ninjasphere/go-ninja/support"
 	"log"  // Similar thing, I suppose?
 	"time" // Used as part of "setInterval" and for pausing code to allow for data to come back
@@ -70,7 +70,9 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 	log.Printf("Driver Starting with config %v", config)
 
 	d.config = config
-
+	d.Conn.MustExportService(&configService{d}, "$driver/"+info.ID+"/configure", &model.ServiceAnnouncement{
+		Schema: "/protocol/configuration",
+	})
 	if !d.config.Initialised {
 		d.config = defaultConfig()
 	}

@@ -188,6 +188,32 @@ function dCopyJSON { # Copies package.json to the Sphere if $COPYJSON is true
 # ====================================================================================================================
 # ====================================================================================================================
 
+while getopts ":c:hp:u:" opt; do
+  case $opt in
+    h)
+      showHelp
+      exit
+      ;;
+    u)
+      $DEFAULTUSERNAME=${OPTARG:=$DEFAULTUSERNAME}
+      ;;
+    p)
+      $DEFAULTPASSWORD=${OPTARG:=$DEFAULTPASSWORD}
+      ;;
+    d)
+
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit 1
+      ;;
+  esac
+done
+
+
 if [ "$1" = "--command" ] ; then # If we're bypassing the menu
   INPUT=$2
 elif [ "$1" = "--help" ] ; then # If we're asking for help
