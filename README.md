@@ -45,9 +45,9 @@ To-Do
 - Add the UI to the driver to control AllOne
 - FIX ALL THE BUGS!
 
- Helping out
- ===========
+Helping out
+===========
 
- This is my first ever project in Go. I literally learned the language while porting this code over from node.js. As a result, it's going to be a mess. I hugely appreciate pull requests, so please fork and send in pull requests!
+This is my first ever project in Go. I literally learned the language while porting this code over from node.js. As a result, there may be coding errors or bugs present. Pull requests and forks are very much appreciated.
 
- If you wish to help out in other ways, you could donate hardware and / or beer money. The more Orvibo gear I can purchase, the more neat features I can cram into the driver and the happier you (and I) will be. Please contact me, or donate via Paypal, to grayda [a@t] solid inc [do.t] org
+If you're not a coder, you can still help out. I'm accepting donations of hardware and / or beer money. There are plenty of Orvibo products out there, including the Kepler gas detector, the Orvibo RF switch (which works with the AllOne) and some new products on the horizon, like a powerstrip version of the sockets. These cost money, so if you own these and don't want them any more, please contact me. Any money donated goes directly towards the development of this driver, including hardware purchase, installation (for example, the RF switch requires installation by a certified electrician) and any out-of-pocket expenses directly related to the project. Please contact me using my GitHub email address to work out how you can help out.
