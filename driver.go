@@ -15,29 +15,43 @@ import (
 // package.json is required, otherwise the app just exits and doesn't show any output
 var info = ninja.LoadModuleInfo("./package.json")
 var serial string
+var driver *OrviboDriver // So we can access this in our configuration.go file
 
 // Are we ready to rock?
 var ready = false
 var started = false // Stops us from running theloop twice
-var device = make(map[int]*OrviboDevice)
 
 // OrviboDriver holds info about our driver, including our configuration
 type OrviboDriver struct {
 	support.DriverSupport
 	config *OrviboDriverConfig
 	conn   *ninja.Connection
+	device map[int]*OrviboDevice
+}
+
+// OrviboIRCode is a struct that holds info about saved IR codes. Used with config
+type OrviboIRCode struct {
+	Name        string // A short name for the IR code
+	Description string
+	Code        string // The IR code itself
 }
 
 // OrviboDriverConfig holds config info. I don't think it's extensively used in this driver?
 type OrviboDriverConfig struct {
-	Initialised    bool
-	NumberOfLights int
+	Initialised    bool           // Has our driver run once before?
+	Codes          []OrviboIRCode // Saved IR codes
+	learningIR     bool
+	learningIRName string
 }
 
 // No config provided? Set up some defaults
 func defaultConfig() *OrviboDriverConfig {
+
+	c := []OrviboIRCode{} // Blank IR code
+
 	return &OrviboDriverConfig{
 		Initialised: false,
+		Codes:       c,
 	}
 }
 
@@ -45,8 +59,8 @@ func defaultConfig() *OrviboDriverConfig {
 func NewDriver() (*OrviboDriver, error) {
 
 	// Make a new OrviboDriver. Ampersand means to make a new copy, not reference the parent one (so A = new B instead of A = new B, C = A)
-	driver := &OrviboDriver{}
-
+	driver = &OrviboDriver{}
+	driver.device = make(map[int]*OrviboDevice)
 	// Initialize our driver. Throw back an error if necessary. Remember, := is basically a short way of saying "var blah string = 'abcd'"
 	err := driver.Init(info)
 
@@ -56,7 +70,7 @@ func NewDriver() (*OrviboDriver, error) {
 
 	// Now we export the driver so the Sphere can find it (?)
 	err = driver.Export(driver)
-	fmt.Println("Here")
+
 	if err != nil {
 		log.Fatalf("Failed to export Orvibo driver: %s", err)
 	}
@@ -70,12 +84,14 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 	log.Printf("Driver Starting with config %v", config)
 
 	d.config = config
-	d.Conn.MustExportService(&configService{d}, "$driver/"+info.ID+"/configure", &model.ServiceAnnouncement{
-		Schema: "/protocol/configuration",
-	})
+
 	if !d.config.Initialised {
 		d.config = defaultConfig()
 	}
+
+	d.Conn.MustExportService(&configService{d}, "$driver/"+info.ID+"/configure", &model.ServiceAnnouncement{
+		Schema: "/protocol/configuration",
+	})
 
 	if started == false {
 		theloop(d, config)
@@ -110,6 +126,11 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 						fmt.Println("Socket found! MAC address is", msg.DeviceInfo.MACAddress)
 						orvibo.Subscribe() // Subscribe to any unsubscribed sockets
 						orvibo.Query()     // And query any unqueried sockets
+					case "existingallonefound":
+						fallthrough
+					case "allonefound":
+						orvibo.Subscribe()
+						orvibo.Query()
 					case "subscribed":
 						if msg.DeviceInfo.Subscribed == false {
 
@@ -121,24 +142,33 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 						}
 						orvibo.Query()
 					case "queried":
-
+						fmt.Println("Query event called")
 						if msg.DeviceInfo.Queried == false {
-							device[msg.DeviceInfo.ID] = NewOrviboDevice(d, msg.DeviceInfo)
+							fmt.Println("Not queried. Name is", msg.DeviceInfo.Name)
+							d.device[msg.DeviceInfo.ID] = NewOrviboDevice(d, msg.DeviceInfo)
+							d.device[msg.DeviceInfo.ID].Device.Name = msg.DeviceInfo.Name
 
-							_ = d.Conn.ExportDevice(device[msg.DeviceInfo.ID])
-							_ = d.Conn.ExportChannel(device[msg.DeviceInfo.ID], device[msg.DeviceInfo.ID].onOffChannel, "on-off")
-							device[msg.DeviceInfo.ID].Device.Name = msg.Name
-							device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+							if msg.DeviceInfo.DeviceType == orvibo.SOCKET {
+								_ = d.Conn.ExportDevice(driver.device[msg.DeviceInfo.ID])
+								_ = d.Conn.ExportChannel(driver.device[msg.DeviceInfo.ID], driver.device[msg.DeviceInfo.ID].onOffChannel, "on-off")
+								d.device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+								d.device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
+							}
 							orvibo.Devices[msg.DeviceInfo.MACAddress].Queried = true
-							device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
 
+						} else {
+							fmt.Println("Already queried")
 						}
 
+					case "ircode":
+						if driver.config.learningIR == true {
+							saveIR
+						}
 					case "statechanged":
 						fmt.Println("State changed to:", msg.DeviceInfo.State)
 						if msg.DeviceInfo.Queried == true {
-							device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
-							device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
+							d.device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+							d.device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
 						}
 					case "quit":
 						autoDiscover <- true
@@ -156,6 +186,33 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 
 	}()
 	return nil
+}
+
+func (d *OrviboDriver) saveIR(config OrviboDriverConfig) error {
+
+	existing := d.config.get(config.ID)
+
+	if existing != nil {
+		existing.Pin = tvcfg.Pin
+		existing.Name = tvcfg.Name
+		existing.IP = tvcfg.IP
+		existing.ID = tvcfg.Name + tvcfg.Pin
+	} else {
+		tvcfg.ID = tvcfg.Name + tvcfg.Pin
+		d.config.TVs[tvcfg.ID] = &tvcfg
+
+		go d.createTVDevice(&tvcfg)
+	}
+
+	tv := lgtv.TV{}
+	tv.Id = tvcfg.ID
+	tv.Ip = tvcfg.IP
+	tv.Name = tvcfg.Name
+	tv.Pin = tvcfg.Pin
+	fmt.Print("Save Config - ID:%s IP:%s\n", tv.Id, tvcfg.IP.String())
+	tv.PairWithPin()
+
+	return d.SendEvent("config", d.config)
 }
 
 func (d *OrviboDriver) Stop() error {

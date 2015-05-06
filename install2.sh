@@ -45,6 +45,7 @@ function showGauge { # Show a progress bar. Param 1 is the title, Param 2 is the
   fi
 
   echo "$1 - $2 ($3%)"
+  echo
 }
 
 function showMenu {
@@ -97,6 +98,7 @@ function showHelp {
   echo "----------------------------------------------------"
   echo "-I - Installs the driver. Same as -D, but with more end-user friendly output"
   echo "-D - Deploys the driver (build driver, stop it on the Sphere, copy it (and package.json if -j not specified), start the driver)"
+  echo "-E - Builds the driver, copies it to the Sphere, but doesn't run it (for debugging purposes)"
   echo "-R - SSH into the Sphere and run the driver interactively"
   echo "-S - Restart the driver (stop, start)"
   echo "-G - Runs 'go get' to update. Use with -B"
@@ -223,7 +225,7 @@ function dCopyJSON { # Copies package.json to the Sphere if $COPYJSON is true
   fi
 }
 
-while getopts ":hu:p:n:rmsIjDCRSGBT" opt; do
+while getopts ":hu:p:n:rmsIjDECRSGBT" opt; do
   case $opt in
     h)
       showHelp
@@ -269,6 +271,9 @@ while getopts ":hu:p:n:rmsIjDCRSGBT" opt; do
     G)
       INPUT="goget"
       ;;
+    E)
+      INPUT="debug"
+      ;;
     B)
       INPUT="build"
       ;;
@@ -307,6 +312,7 @@ case $INPUT in
   run)
     showTitle "Run Driver on Sphere"
     resolveHost
+    dStop
     dSSH "/data/sphere/user-autostart/drivers/$DRIVERNAME"
     ;;
   restart)
@@ -340,6 +346,14 @@ case $INPUT in
     showTitle "Run main.go on go-orvibo"
     echo "Running go-orvibo test.. "
     go run ../go-orvibo/tests/main.go
+    ;;
+  debug)
+    showTitle "Debug driver on Sphere"
+    dStop | showGauge "Progress"  "Stopping driver on $DEFAULTHOST.." 0
+    dBuild | showGauge "Progress"  "Building.." 25 # Sets environment variables and builds the driver using go build
+    dCopyBinary | showGauge "Progress"  "Copying binary to $DEFAULTHOST.." 50 # Copies the binary to the Sphere
+    sleep 1 | showGauge "Progress" "Done!" 100
+    msgbox "Complete" "$DRIVERNAME copied to Sphere. Please SSH in to run driver"
     ;;
   install)
     showTitle "Install $DRIVERNAME to Sphere"
