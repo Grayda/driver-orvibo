@@ -32,18 +32,18 @@ The app should auto-start when your Sphere starts. If at any point your sockets 
 Bugs / Known Issues
 ===================
 
-
  - This driver is still in beta and may not reliably detect your socket. If it gets stuck anywhere, green reboot your Sphere
  - Needs moar comments. Next version should have more comments
  - Don't use this driver for anything mission critical. If you want to launch nukes or take over the world, be proactive and do it yourself, don't let a $25 WiFi socket do the dirty work. Shame on you.
  - State may appear stuck on the Android version of the Ninja Sphere. Toggling the socket still shows it as on or off, even when it's not. State is correctly updated in the driver, but not reflected in the app until you exit, or hit refresh on the home screen. This is a known issue with the Ninja Sphere app and will be fixed up later. iOS doesn't have this issue.
+ - The driver may crash if you put an AllOne into learning mode and no IR code is found in the meantime
 
 To-Do
 =======
 
-
 - Make this driver work with the Orvibo AllOne IR blaster. That might take a bit, as I need to study up on my Ninja Sphere stuff first to work out if this is currently possible
- - FIX ALL THE BUGS!
+- Add the UI to the driver to control AllOne
+- FIX ALL THE BUGS!
 
  Helping out
  ===========
