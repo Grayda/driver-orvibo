@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"                         // For outputting stuff to the screen
-	"github.com/Grayda/go-orvibo" // The magic part that lets us control sockets
-
-	//	"github.com/davecgh/go-spew/spew"     // For neatly outputting stuff
+	"fmt"                                 // For outputting stuff to the screen
+	"github.com/Grayda/go-orvibo"         // The magic part that lets us control sockets
 	"github.com/ninjasphere/go-ninja/api" // Ninja Sphere API
 	"github.com/ninjasphere/go-ninja/model"
 	"github.com/ninjasphere/go-ninja/support"
@@ -31,17 +29,21 @@ type OrviboDriver struct {
 
 // OrviboIRCode is a struct that holds info about saved IR codes. Used with config
 type OrviboIRCode struct {
+	ID          int    // The index of our code
 	Name        string // A short name for the IR code
 	Description string
 	Code        string // The IR code itself
+	AllOne      string // Which AllOne to blast through (MACAddress)
 }
 
 // OrviboDriverConfig holds config info. I don't think it's extensively used in this driver?
 type OrviboDriverConfig struct {
-	Initialised    bool           // Has our driver run once before?
-	Codes          []OrviboIRCode // Saved IR codes
-	learningIR     bool
-	learningIRName string
+	Initialised           bool           // Has our driver run once before?
+	Codes                 []OrviboIRCode // Saved IR codes
+	learningIR            bool
+	learningIRName        string
+	learningIRDescription string
+	learningIRDevice      string
 }
 
 // No config provided? Set up some defaults
@@ -88,6 +90,7 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 	if !d.config.Initialised {
 		d.config = defaultConfig()
 	}
+	d.config = config
 
 	d.Conn.MustExportService(&configService{d}, "$driver/"+info.ID+"/configure", &model.ServiceAnnouncement{
 		Schema: "/protocol/configuration",
@@ -162,7 +165,13 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 
 					case "ircode":
 						if driver.config.learningIR == true {
-							saveIR
+							ir := OrviboIRCode{
+								Name:        driver.config.learningIRName,
+								Code:        msg.DeviceInfo.LastIRMessage,
+								Description: driver.config.learningIRDescription,
+								AllOne:      driver.config.learningIRDevice,
+							}
+							driver.saveIR(driver.config, ir)
 						}
 					case "statechanged":
 						fmt.Println("State changed to:", msg.DeviceInfo.State)
@@ -188,30 +197,37 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 	return nil
 }
 
-func (d *OrviboDriver) saveIR(config OrviboDriverConfig) error {
+func (d *OrviboDriver) saveIR(config *OrviboDriverConfig, ir OrviboIRCode) error {
 
-	existing := d.config.get(config.ID)
+	d.config.learningIR = false
+	d.config.learningIRName = ""
+	d.config.learningIRDevice = ""
+	d.config.learningIRDescription = ""
 
-	if existing != nil {
-		existing.Pin = tvcfg.Pin
-		existing.Name = tvcfg.Name
-		existing.IP = tvcfg.IP
-		existing.ID = tvcfg.Name + tvcfg.Pin
-	} else {
-		tvcfg.ID = tvcfg.Name + tvcfg.Pin
-		d.config.TVs[tvcfg.ID] = &tvcfg
+	d.config.Codes = append(d.config.Codes, ir)
 
-		go d.createTVDevice(&tvcfg)
+	return d.SendEvent("config", d.config)
+
+}
+
+func (d *OrviboDriver) deleteIR(config *OrviboDriverConfig, code string) error {
+	fmt.Println("========================")
+	fmt.Println("Looking for" + code)
+	// Go is a stupid language. There is no easy way to delete something from a slice.
+	// What I've done here, is loop through all the codes. If the code doesn't equal
+	// the code we're looking for, it's saved in the codelist slice. At the end,
+	// we replace config.Codes with our new list which doesn't have our code. Easy! ... ish
+	var codelist []OrviboIRCode
+	for _, ircodes := range d.config.Codes {
+		if ircodes.Code != code {
+			codelist = append(codelist, ircodes)
+		} else {
+			fmt.Println("Found", ircodes.Name+".", "Not including in final array..")
+		}
 	}
 
-	tv := lgtv.TV{}
-	tv.Id = tvcfg.ID
-	tv.Ip = tvcfg.IP
-	tv.Name = tvcfg.Name
-	tv.Pin = tvcfg.Pin
-	fmt.Print("Save Config - ID:%s IP:%s\n", tv.Id, tvcfg.IP.String())
-	tv.PairWithPin()
-
+	d.config.Codes = codelist
+	fmt.Println("Saving options")
 	return d.SendEvent("config", d.config)
 }
 

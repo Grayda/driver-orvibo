@@ -6,41 +6,73 @@ import (
 	"github.com/Grayda/go-orvibo"
 	"github.com/ninjasphere/go-ninja/model"
 	"github.com/ninjasphere/go-ninja/suit"
-	"strconv"
+	"strings"
 )
+
+// This file contains most of the code for the UI (i.e. what appears in the Labs)
 
 type configService struct {
 	driver *OrviboDriver
 }
 
+// This function is common across all UIs, and is called by the Sphere. Shows our menu option on the main Labs screen
 func (c *configService) GetActions(request *model.ConfigurationRequest) (*[]suit.ReplyAction, error) {
+	// What we're going to show
 	var screen []suit.ReplyAction
-
+	// Loop through all Orvibo devices. All menu options lead to the same page anyway
 	for _, allone := range driver.device {
+		// If it's an AllOne
 		if allone.Device.DeviceType == orvibo.ALLONE {
+			// Add a menu option
 			screen = append(screen, suit.ReplyAction{
-				Name:  "",
-				Label: "Configure AllOne: " + strconv.Itoa(allone.Device.ID),
+				Name:        "",
+				Label:       "Configure AllOne",
+				DisplayIcon: "play",
 			},
 			)
+			break // Who cares how many AllOnes we've found? One is enough to show the UI
 		}
 	}
+	// Return our screen for rendering
 	return &screen, nil
 }
 
+// When you click on a ReplyAction button, Configure is called
 func (c *configService) Configure(request *model.ConfigurationRequest) (*suit.ConfigurationScreen, error) {
 	fmt.Sprintf("Incoming configuration request. Action:%s Data:%s", request.Action, string(request.Data))
 
 	switch request.Action {
 	case "list":
+		fmt.Println("Showing list of IR codes..")
 		return c.list()
 	case "blastir":
+
 		var vals map[string]string
 		json.Unmarshal(request.Data, &vals)
 
-		orvibo.EmitIR(vals["allone"], vals["code"])
+		var codes = strings.Split(vals["code"], "|")
+		fmt.Println("Blasting IR code " + codes[0] + " on AllOne: " + codes[1] + "..")
+		orvibo.EmitIR(codes[0], codes[1])
+		return c.list()
 	case "new":
 		return c.new(driver.config)
+	case "reset": // For debugging purposes. Clears out the stored codes
+		driver.config.Codes = nil
+		driver.config.learningIR = false
+		driver.config.learningIRName = ""
+		driver.SendEvent("config", driver.config)
+		return c.list()
+	case "delete":
+		var vals map[string]string
+		err := json.Unmarshal(request.Data, &vals)
+		if err != nil {
+			return c.error(fmt.Sprintf("Failed to unmarshal save config request %s: %s", request.Data, err))
+		}
+		var codes = strings.Split(vals["code"], "|")
+		driver.deleteIR(driver.config, codes[0])
+
+		return c.list()
+
 	case "save":
 		var vals map[string]string
 		err := json.Unmarshal(request.Data, &vals)
@@ -50,9 +82,11 @@ func (c *configService) Configure(request *model.ConfigurationRequest) (*suit.Co
 
 		driver.config.learningIR = true
 		driver.config.learningIRName = vals["name"]
-		orvibo.EnterLearningMode("ALL")
+		driver.config.learningIRDescription = vals["description"]
+		driver.config.learningIRDevice = vals["allone"]
+		orvibo.EnterLearningMode(vals["allone"])
 
-		return c.list()
+		return c.confirm("Learning IR code", "Please press a button on your remote. Click 'Okay' when done")
 	case "":
 		return c.list()
 
@@ -64,6 +98,32 @@ func (c *configService) Configure(request *model.ConfigurationRequest) (*suit.Co
 		return c.error(fmt.Sprintf("Unknown action: %s", request.Action))
 	}
 	return nil, nil
+}
+
+func (c *configService) confirm(title string, description string) (*suit.ConfigurationScreen, error) {
+	screen := suit.ConfigurationScreen{
+		Title: title,
+		Sections: []suit.Section{
+			suit.Section{
+				Contents: []suit.Typed{
+					suit.StaticText{
+						Title: "About this screen",
+						Value: description,
+					},
+				},
+			},
+		},
+		Actions: []suit.Typed{
+			suit.ReplyAction{
+				Label:        "Okay",
+				Name:         "list",
+				DisplayClass: "success",
+				DisplayIcon:  "ok",
+			},
+		},
+	}
+
+	return &screen, nil
 }
 
 func (c *configService) error(message string) (*suit.ConfigurationScreen, error) {
@@ -82,8 +142,10 @@ func (c *configService) error(message string) (*suit.ConfigurationScreen, error)
 		},
 		Actions: []suit.Typed{
 			suit.ReplyAction{
-				Label: "Cancel",
-				Name:  "list",
+				Label:        "Cancel",
+				Name:         "list",
+				DisplayClass: "success",
+				DisplayIcon:  "ok",
 			},
 		},
 	}, nil
@@ -97,7 +159,7 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 		codes = append(codes, suit.ActionListOption{
 			Title:    code.Name,
 			Subtitle: code.Description,
-			Value:    code.Code,
+			Value:    code.Code + "|" + code.AllOne,
 		})
 	}
 
@@ -106,8 +168,12 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 		Sections: []suit.Section{
 			suit.Section{
 				Contents: []suit.Typed{
+					suit.StaticText{
+						Title: "About this screen",
+						Value: "This page shows saved IR codes. To add a new code, press 'New IR Code'",
+					},
 					suit.ActionList{
-						Name:    "allone",
+						Name:    "code",
 						Options: codes,
 						PrimaryAction: &suit.ReplyAction{
 							Name:         "blastir",
@@ -130,10 +196,10 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 				Label: "Close",
 			},
 			suit.ReplyAction{
-				Label:        "New IR code",
+				Label:        "New IR Code",
 				Name:         "new",
 				DisplayClass: "success",
-				DisplayIcon:  "star",
+				DisplayIcon:  "asterisk",
 			},
 		},
 	}
@@ -142,6 +208,30 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 }
 
 func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScreen, error) {
+
+	// What we're going to show
+	var allones []suit.RadioGroupOption
+
+	allones = append(allones, suit.RadioGroupOption{
+		Title:       "All Connected AllOnes",
+		Value:       "ALL",
+		DisplayIcon: "globe",
+	})
+
+	// Loop through all Orvibo devices. All menu options lead to the same page anyway
+	for _, allone := range driver.device {
+		// If it's an AllOne
+		if allone.Device.DeviceType == orvibo.ALLONE {
+			// Add a menu option
+			allones = append(allones, suit.RadioGroupOption{
+				Title:       allone.Device.Name,
+				DisplayIcon: "play",
+				Value:       allone.Device.MACAddress,
+			},
+			)
+
+		}
+	}
 
 	title := "New IR Code"
 
@@ -152,7 +242,7 @@ func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScre
 				Contents: []suit.Typed{
 					suit.StaticText{
 						Title: "About this screen",
-						Value: "When you click Save, the AllOne will enter learning mode. Please press a button on your IR remote to learn it",
+						Value: "Please enter a name and a description for this code. You must also pick an AllOne. When you're ready, click 'Start Learning' and press a button on your remote",
 					},
 					suit.InputHidden{
 						Name:  "id",
@@ -161,18 +251,31 @@ func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScre
 					suit.InputText{
 						Name:        "name",
 						Before:      "Name for this code",
-						Placeholder: "TV Power On",
+						Placeholder: "TV On",
 						Value:       "",
+					},
+					suit.InputText{
+						Name:        "description",
+						Before:      "Code Description",
+						Placeholder: "Living Room TV On",
+						Value:       "",
+					},
+					suit.RadioGroup{
+						Title:   "Select an AllOne to blast from",
+						Name:    "allone",
+						Options: allones,
 					},
 				},
 			},
 		},
 		Actions: []suit.Typed{
-			suit.CloseAction{
-				Label: "Cancel",
+			suit.ReplyAction{
+				Label:        "Cancel",
+				Name:         "list",
+				DisplayClass: "default",
 			},
 			suit.ReplyAction{
-				Label:        "Save",
+				Label:        "Start Learning",
 				Name:         "save",
 				DisplayClass: "success",
 				DisplayIcon:  "star",
