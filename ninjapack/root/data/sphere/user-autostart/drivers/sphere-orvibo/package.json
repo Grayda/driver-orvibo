@@ -1,7 +1,11 @@
 {
   "id": "photography.davidgray.sphere-orvibo",
   "name": "sphere-orvibo",
+<<<<<<< HEAD:ninjapack/root/data/sphere/user-autostart/drivers/sphere-orvibo/package.json
   "version": "0.5.1",
+=======
+  "version": "0.6.0",
+>>>>>>> origin/unstable:ninjapack/root/opt/ninjablocks/drivers/sphere-orvibo/package.json
   "description": "Ninja Sphere - Orvibo socket driver",
   "main": "sphere-orvibo",
   "scripts": {

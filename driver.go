@@ -1,11 +1,10 @@
 package main
 
 import (
-	"fmt"                         // For outputting stuff to the screen
-	"github.com/Grayda/go-orvibo" // The magic part that lets us control sockets
-
-	//	"github.com/davecgh/go-spew/spew"     // For neatly outputting stuff
+	"fmt"                                 // For outputting stuff to the screen
+	"github.com/Grayda/go-orvibo"         // The magic part that lets us control sockets
 	"github.com/ninjasphere/go-ninja/api" // Ninja Sphere API
+	"github.com/ninjasphere/go-ninja/model"
 	"github.com/ninjasphere/go-ninja/support"
 	"log"  // Similar thing, I suppose?
 	"time" // Used as part of "setInterval" and for pausing code to allow for data to come back
@@ -14,29 +13,63 @@ import (
 // package.json is required, otherwise the app just exits and doesn't show any output
 var info = ninja.LoadModuleInfo("./package.json")
 var serial string
+var driver *OrviboDriver // So we can access this in our configuration.go file
 
 // Are we ready to rock?
 var ready = false
 var started = false // Stops us from running theloop twice
-var device = make(map[int]*OrviboDevice)
 
 // OrviboDriver holds info about our driver, including our configuration
 type OrviboDriver struct {
 	support.DriverSupport
 	config *OrviboDriverConfig
 	conn   *ninja.Connection
+	device map[int]*OrviboDevice
+}
+
+// OrviboIRCode is a struct that holds info about saved IR codes. Used with config
+type OrviboIRCode struct {
+	ID          int    // The index of our code
+	Name        string // A short name for the IR code
+	Description string
+	Code        string // The IR code itself
+	AllOne      string // Which AllOne to blast through (MACAddress)
+	Group       string
+}
+
+type OrviboIRCodeGroup struct {
+	ID          int    // The index of our code
+	Name        string // A short name for the IR code
+	Description string
 }
 
 // OrviboDriverConfig holds config info. I don't think it's extensively used in this driver?
 type OrviboDriverConfig struct {
-	Initialised    bool
-	NumberOfLights int
+	Initialised           bool                // Has our driver run once before?
+	Codes                 []OrviboIRCode      // Saved IR codes
+	CodeGroups            []OrviboIRCodeGroup // Logical groupings of IR codes
+	learningIR            bool
+	learningIRName        string
+	learningIRDescription string
+	learningIRDevice      string
+	learningIRGroup       string
 }
 
 // No config provided? Set up some defaults
 func defaultConfig() *OrviboDriverConfig {
+	var cg []OrviboIRCodeGroup
+	c := []OrviboIRCode{} // Blank IR code
+	cg = append(cg, OrviboIRCodeGroup{
+		ID:          0,
+		Name:        "Main",
+		Description: "",
+	},
+	)
+
 	return &OrviboDriverConfig{
 		Initialised: false,
+		Codes:       c,
+		CodeGroups:  cg,
 	}
 }
 
@@ -44,16 +77,18 @@ func defaultConfig() *OrviboDriverConfig {
 func NewDriver() (*OrviboDriver, error) {
 
 	// Make a new OrviboDriver. Ampersand means to make a new copy, not reference the parent one (so A = new B instead of A = new B, C = A)
-	driver := &OrviboDriver{}
-
+	driver = &OrviboDriver{}
+	driver.device = make(map[int]*OrviboDevice)
 	// Initialize our driver. Throw back an error if necessary. Remember, := is basically a short way of saying "var blah string = 'abcd'"
 	err := driver.Init(info)
+
 	if err != nil {
 		log.Fatalf("Failed to initialize Orvibo driver: %s", err)
 	}
 
 	// Now we export the driver so the Sphere can find it (?)
 	err = driver.Export(driver)
+
 	if err != nil {
 		log.Fatalf("Failed to export Orvibo driver: %s", err)
 	}
@@ -67,9 +102,15 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 	log.Printf("Driver Starting with config %v", config)
 
 	d.config = config
+
 	if !d.config.Initialised {
 		d.config = defaultConfig()
 	}
+	d.config = config
+
+	d.Conn.MustExportService(&configService{d}, "$driver/"+info.ID+"/configure", &model.ServiceAnnouncement{
+		Schema: "/protocol/configuration",
+	})
 
 	if started == false {
 		theloop(d, config)
@@ -104,6 +145,11 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 						fmt.Println("Socket found! MAC address is", msg.DeviceInfo.MACAddress)
 						orvibo.Subscribe() // Subscribe to any unsubscribed sockets
 						orvibo.Query()     // And query any unqueried sockets
+					case "existingallonefound":
+						fallthrough
+					case "allonefound":
+						orvibo.Subscribe()
+						orvibo.Query()
 					case "subscribed":
 						if msg.DeviceInfo.Subscribed == false {
 
@@ -115,24 +161,40 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 						}
 						orvibo.Query()
 					case "queried":
-
+						fmt.Println("Query event called")
 						if msg.DeviceInfo.Queried == false {
-							device[msg.DeviceInfo.ID] = NewOrviboDevice(d, msg.DeviceInfo)
+							fmt.Println("Not queried. Name is", msg.DeviceInfo.Name)
+							d.device[msg.DeviceInfo.ID] = NewOrviboDevice(d, msg.DeviceInfo)
+							d.device[msg.DeviceInfo.ID].Device.Name = msg.DeviceInfo.Name
 
-							_ = d.Conn.ExportDevice(device[msg.DeviceInfo.ID])
-							_ = d.Conn.ExportChannel(device[msg.DeviceInfo.ID], device[msg.DeviceInfo.ID].onOffChannel, "on-off")
-							device[msg.DeviceInfo.ID].Device.Name = msg.Name
-							device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+							if msg.DeviceInfo.DeviceType == orvibo.SOCKET {
+								_ = d.Conn.ExportDevice(driver.device[msg.DeviceInfo.ID])
+								_ = d.Conn.ExportChannel(driver.device[msg.DeviceInfo.ID], driver.device[msg.DeviceInfo.ID].onOffChannel, "on-off")
+								d.device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+								d.device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
+							}
 							orvibo.Devices[msg.DeviceInfo.MACAddress].Queried = true
-							device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
 
+						} else {
+							fmt.Println("Already queried")
 						}
 
+					case "ircode":
+						if driver.config.learningIR == true {
+							ir := OrviboIRCode{
+								Name:        driver.config.learningIRName,
+								Code:        msg.DeviceInfo.LastIRMessage,
+								Description: driver.config.learningIRDescription,
+								AllOne:      driver.config.learningIRDevice,
+								Group:       driver.config.learningIRGroup,
+							}
+							driver.saveIR(driver.config, ir)
+						}
 					case "statechanged":
 						fmt.Println("State changed to:", msg.DeviceInfo.State)
 						if msg.DeviceInfo.Queried == true {
-							device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
-							device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
+							d.device[msg.DeviceInfo.ID].Device.State = msg.DeviceInfo.State
+							d.device[msg.DeviceInfo.ID].onOffChannel.SendState(msg.DeviceInfo.State)
 						}
 					case "quit":
 						autoDiscover <- true
@@ -150,6 +212,44 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 
 	}()
 	return nil
+}
+
+func (d *OrviboDriver) saveIR(config *OrviboDriverConfig, ir OrviboIRCode) error {
+
+	d.config.learningIR = false
+	d.config.learningIRName = ""
+	d.config.learningIRDevice = ""
+	d.config.learningIRDescription = ""
+
+	d.config.Codes = append(d.config.Codes, ir)
+
+	return d.SendEvent("config", d.config)
+
+}
+
+func (d *OrviboDriver) saveGroups(config *OrviboDriverConfig) error {
+	return d.SendEvent("config", d.config)
+}
+
+func (d *OrviboDriver) deleteIR(config *OrviboDriverConfig, code string) error {
+	fmt.Println("========================")
+	fmt.Println("Looking for" + code)
+	// Go is a stupid language. There is no easy way to delete something from a slice.
+	// What I've done here, is loop through all the codes. If the code doesn't equal
+	// the code we're looking for, it's saved in the codelist slice. At the end,
+	// we replace config.Codes with our new list which doesn't have our code. Easy! ... ish
+	var codelist []OrviboIRCode
+	for _, ircodes := range d.config.Codes {
+		if ircodes.Code != code {
+			codelist = append(codelist, ircodes)
+		} else {
+			fmt.Println("Found", ircodes.Name+".", "Not including in final array..")
+		}
+	}
+
+	d.config.Codes = codelist
+	fmt.Println("Saving options")
+	return d.SendEvent("config", d.config)
 }
 
 func (d *OrviboDriver) Stop() error {
