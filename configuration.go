@@ -267,19 +267,21 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 // Shows the UI to learn a new IR code
 func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScreen, error) {
 
-	// What we're going to show. Are you seeing a pattern here now? The UI is rather easy once you do it for a while
-	// If you want to know what options these all support, check out
+	// What radio options we're going to show. Are you seeing a pattern here now? The UI is rather easy once you do it for a while
+	// If you want to know what options the UI supports, and what values you can use with them, check out https://github.com/ninjasphere/go-ninja/blob/master/suit/screen.go
 	var allones []suit.RadioGroupOption
 	var groups []suit.RadioGroupOption
 
+	// Add a new RadioGroupOption to our list. This one blasts from All AllOnes connected ("ALL" is a special MAC Address in go-orvibo)
 	allones = append(allones, suit.RadioGroupOption{
 		Title:       "All Connected AllOnes",
 		Value:       "ALL",
 		DisplayIcon: "globe",
 	})
 
+	// Loop through the groups we've got
 	for _, codegroup := range driver.config.CodeGroups {
-		groups = append(groups, suit.RadioGroupOption{
+		groups = append(groups, suit.RadioGroupOption{ // Add a new radio buton
 			Title:       codegroup.Name,
 			Value:       codegroup.Name,
 			DisplayIcon: "folder-open",
@@ -287,11 +289,11 @@ func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScre
 		)
 	}
 
-	// Loop through all Orvibo devices. All menu options lead to the same page anyway
+	// Loop through all Orvibo devices.
 	for _, allone := range driver.device {
 		// If it's an AllOne
 		if allone.Device.DeviceType == orvibo.ALLONE {
-			// Add a menu option
+			// Add a Radio button with our AllOne's name and MAC Address
 			allones = append(allones, suit.RadioGroupOption{
 				Title:       allone.Device.Name,
 				DisplayIcon: "play",
@@ -302,25 +304,25 @@ func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScre
 		}
 	}
 
-	title := "New IR Code"
+	title := "New IR Code" // Up here for readability
 
 	screen := suit.ConfigurationScreen{
 		Title: title,
-		Sections: []suit.Section{
-			suit.Section{
+		Sections: []suit.Section{ // New array of sections
+			suit.Section{ // New section
 				Contents: []suit.Typed{
-					suit.StaticText{
+					suit.StaticText{ // Some introductory text
 						Title: "About this screen",
 						Value: "Please enter a name and a description for this code. You must also pick an AllOne. When you're ready, click 'Start Learning' and press a button on your remote",
 					},
-					suit.InputHidden{
+					suit.InputHidden{ // Not actually used by my code, but you can use InputHidden to pass stuff back to c.Configure()
 						Name:  "id",
 						Value: "",
 					},
-					suit.InputText{
+					suit.InputText{ // Textbox
 						Name:        "name",
 						Before:      "Name for this code",
-						Placeholder: "TV On",
+						Placeholder: "TV On", // Placeholder is the faded text that appears inside a textbox, giving you a hint as to what to type in
 						Value:       "",
 					},
 					suit.InputText{
@@ -332,18 +334,18 @@ func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScre
 					suit.RadioGroup{
 						Title:   "Select an AllOne to blast from",
 						Name:    "allone",
-						Options: allones,
+						Options: allones, // We created our radio group before, and now we put it in here
 					},
 					suit.RadioGroup{
 						Title:   "Select a group to add this code to",
 						Name:    "group",
-						Options: groups,
+						Options: groups, // Same with our code groups
 					},
 				},
 			},
 		},
 		Actions: []suit.Typed{
-			suit.ReplyAction{
+			suit.ReplyAction{ // This is not a CloseAction, because we want to go back to the list of IR codes, not back to the main menu. Hence why we use a ReplyAction with "list"
 				Label:        "Cancel",
 				Name:         "list",
 				DisplayClass: "default",
@@ -360,10 +362,11 @@ func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScre
 	return &screen, nil
 }
 
+// You know the drill. I don't think it even needs to accept an *OrviboDriverConfig, because you could just call driver.config
 func (c *configService) newgroup(config *OrviboDriverConfig) (*suit.ConfigurationScreen, error) {
 
 	title := "New Code Group"
-
+	// New screen
 	screen := suit.ConfigurationScreen{
 		Title: title,
 		Sections: []suit.Section{
@@ -410,6 +413,8 @@ func (c *configService) newgroup(config *OrviboDriverConfig) (*suit.Configuratio
 	return &screen, nil
 }
 
+// Aye-aye, captain.
+// Not actually needed (?)
 func i(i int) *int {
 	return &i
 }
