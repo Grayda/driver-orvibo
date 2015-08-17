@@ -18,12 +18,12 @@ type OrviboDevice struct {
 	info         *model.Device
 	sendEvent    func(event string, payload interface{}) error // For pasing info back to the API. Use this to send configs and such
 	onOffChannel *channels.OnOffChannel                        // There are other channels, but
-	Device       orvibo.Device
+	Device       *orvibo.Device
 }
 
 // NewOrviboDevice is called when When go-orvibo finds a new Orvibo device. The results are then appended to an array
 // Please read over go-orvibo to learn more about orvibo.Device (which is go-orvibo's internal list of devices)
-func NewOrviboDevice(driver ninja.Driver, id orvibo.Device) *OrviboDevice {
+func NewOrviboDevice(driver ninja.Driver, id *orvibo.Device) *OrviboDevice {
 	// I know what you're thinking, coz I'm thinking too. Not every OrviboDevice is a socket. go-orvibo takes care of this check for us
 	name := id.Name
 

@@ -38,9 +38,18 @@ type OrviboIRCode struct {
 	Group       string // Which group does this code belong to?
 }
 
+type OrviboRFCode struct {
+	ID          string // The Channel of our code
+	Name        string // A short name for the IR code
+	Description string
+	Code        string // The RF code itself
+	AllOne      string // Which AllOne to blast through (MACAddress)
+	Group       string // Which group does this code belong to?
+}
+
 // OrviboIRCodeGroup is a struct that defines an IR code. This makes it easier to pass to a saveGroup function
 // Seriously. Structs are awesome. You should use them all the time.
-type OrviboIRCodeGroup struct {
+type OrviboIRCodeGroup struct { // Also applies to RF!
 	ID          int    // The index of our code
 	Name        string // A short name for the IR code
 	Description string
@@ -51,6 +60,7 @@ type OrviboDriverConfig struct {
 	Initialised           bool                // Has our driver run once before?
 	Codes                 []OrviboIRCode      // Saved IR codes
 	CodeGroups            []OrviboIRCodeGroup // Logical groupings of IR codes
+	Switches              map[string]OrviboRFCode
 	learningIR            bool
 	learningIRName        string
 	learningIRDescription string
@@ -111,6 +121,8 @@ func (d *OrviboDriver) Start(config *OrviboDriverConfig) error {
 		d.config = defaultConfig()
 	}
 
+	d.config.Switches = make(map[string]OrviboRFCode)
+
 	// This tells the API that we're going to expose a UI, and to run GetActions() in configuration.go
 	d.Conn.MustExportService(&configService{d}, "$driver/"+info.ID+"/configure", &model.ServiceAnnouncement{
 		Schema: "/protocol/configuration",
@@ -170,7 +182,7 @@ func theloop(d *OrviboDriver, config *OrviboDriverConfig) error {
 					case "queried": // We've asked for a name and we've got the info back
 						fmt.Println("Query event called")
 						if msg.DeviceInfo.Queried == false {
-							fmt.Println("Not queried. Name is", msg.DeviceInfo.Name)
+
 							d.device[msg.DeviceInfo.ID] = NewOrviboDevice(d, msg.DeviceInfo) // Now we add this to d.device[].Device because we can now control it
 							d.device[msg.DeviceInfo.ID].Device.Name = msg.DeviceInfo.Name
 
@@ -236,6 +248,11 @@ func (d *OrviboDriver) saveIR(config *OrviboDriverConfig, ir OrviboIRCode) error
 
 }
 
+func (d *OrviboDriver) saveRF(config *OrviboDriverConfig, rf OrviboRFCode) error {
+	d.config.Switches[rf.ID] = rf
+	return d.SendEvent("config", d.config)
+}
+
 // Created a new group? Save it. See how stupidly simple saving stuff to the config is? MUCH better than the Ninja Block days!
 func (d *OrviboDriver) saveGroups(config *OrviboDriverConfig) error {
 	return d.SendEvent("config", d.config)
@@ -267,6 +284,13 @@ func (d *OrviboDriver) deleteIR(config *OrviboDriverConfig, code string) error {
 func (d *OrviboDriver) Stop() error {
 	return fmt.Errorf("This driver does not support being stopped. YOU HAVE NO POWER HERE.")
 
+}
+
+func stringToBool(i string) bool {
+	if i == "true" {
+		return true
+	}
+	return false
 }
 
 // Analogous to Javascript's setInterval. Runs a function after a certain duration and keeps running it until "true" is passed to it

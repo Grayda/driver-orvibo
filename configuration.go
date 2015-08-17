@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Grayda/go-orvibo"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ninjasphere/go-ninja/model"
 	"github.com/ninjasphere/go-ninja/suit"
 )
@@ -46,8 +47,39 @@ func (c *configService) Configure(request *model.ConfigurationRequest) (*suit.Co
 
 	switch request.Action {
 	case "list": // Listing the IR codes
-		fmt.Println("Showing list of IR codes..")
+		fmt.Println("Showing list of IR and RF codes..")
 		return c.list()
+	case "blastrfon": // Blasting IR codes
+		// Make a map of strings
+		var vals map[string]string
+		// Take our json response from sphere-ui and place it into our vals map
+		json.Unmarshal(request.Data, &vals)
+		// Because ActionListOption can't return more than one lot of data and we need to let our code know
+		// WHAT code to blast, and what AllOne to shoot it from, we use a pipe to mash data together
+		var codes = strings.Split(vals["switches"], "|")
+		fmt.Println("Blasting RF code " + codes[1] + " with state 01 and channel ID " + codes[0] + " on AllOne: " + codes[2] + "..")
+		// As inferred from the fmt.Println above, codes[0] (being vals["switches"] split by the | command) is the IR and codes[1] is the AllOne to shoot from (MAC Address)
+		//	orvibo.EmitRF(state bool, RF string, macAdd string)
+		orvibo.EmitRF(true, codes[0], codes[1], codes[2])
+		// c.list creates a list of AllOne IR codes and sends them back to sphere-ui / suits for displaying
+		return c.list()
+	case "blastrfoff": // Blasting IR codes
+		// Make a map of strings
+		var vals map[string]string
+		// Take our json response from sphere-ui and place it into our vals map
+		json.Unmarshal(request.Data, &vals)
+		// Because ActionListOption can't return more than one lot of data and we need to let our code know
+		// WHAT code to blast, and what AllOne to shoot it from, we use a pipe to mash data together
+		spew.Dump(vals)
+		var codes = strings.Split(vals["switches"], "|")
+
+		fmt.Println("Blasting RF code " + codes[0] + " with state 00 and channel ID " + codes[1] + " on AllOne: " + codes[2] + "..")
+		// As inferred from the fmt.Println above, codes[0] (being vals["switches"] split by the | command) is the IR and codes[1] is the AllOne to shoot from (MAC Address)
+		//	orvibo.EmitRF(state bool, RF string, macAdd string)
+		orvibo.EmitRF(false, codes[0], codes[1], codes[2])
+		// c.list creates a list of AllOne IR codes and sends them back to sphere-ui / suits for displaying
+		return c.list()
+
 	case "blastir": // Blasting IR codes
 		// Make a map of strings
 		var vals map[string]string
@@ -64,6 +96,9 @@ func (c *configService) Configure(request *model.ConfigurationRequest) (*suit.Co
 	case "new": // If we've clicked the New IR button
 		// Returns a configuration screen with textboxes and stuff, to allow users to set up a new IR code
 		return c.new(driver.config)
+	case "newrf": // If we've clicked the New IR button
+		// Returns a configuration screen with textboxes and stuff, to allow users to set up a new IR code
+		return c.newrf(driver.config)
 	case "reset": // For debugging purposes. Clears out the stored codes
 		driver.config.Codes = nil
 		driver.config.learningIR = false
@@ -115,6 +150,23 @@ func (c *configService) Configure(request *model.ConfigurationRequest) (*suit.Co
 		// The UI isn't event driven, meaning we can't tell the UI to pause until we get an IR code back. If we go back to c.list(), there won't be a code there (because we're
 		// still learning), so we shove this page in the middle that makes the user click OK when done. When they do, the code has already been learned and shows up in the UI
 		return c.confirm("Learning IR code", "Please press a button on your remote. Click 'Okay' when done")
+	case "saverf":
+		var vals map[string]string
+		err := json.Unmarshal(request.Data, &vals)
+		if err != nil {
+			return c.error(fmt.Sprintf("Failed to unmarshal save config request %s: %s", request.Data, err))
+		}
+
+		spew.Dump(vals)
+		driver.saveRF(driver.config, OrviboRFCode{
+			Name:        vals["name"],
+			ID:          vals["id"],
+			Description: vals["description"],
+			Code:        vals["data"],
+			AllOne:      vals["allone"],
+			Group:       vals["group"],
+		})
+		return c.confirm("Learning RF switch", "To set up this switch, press 'Okay', then press and hold a button on your RF switch until it beeps. In the Labs page, tap to turn the new switch on or off. The code the AllOne emits will be 'written' to the wall switch")
 	case "": // Coming in from the main menu
 		return c.list()
 
@@ -189,10 +241,22 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 
 	// ActionListOption are buttons within a section that are sent to c.Configuration
 	var codes []suit.ActionListOption
+	var switches []suit.ActionListOption
 	// Sections, for logical grouping
 	var sections []suit.Section
 	// Loop through all the CodeGroups in our driver
 	for _, groups := range driver.config.CodeGroups {
+
+		for _, code := range driver.config.Switches {
+			if code.Group == groups.Name {
+				switches = append(switches, suit.ActionListOption{
+					Title:    code.Name,
+					Subtitle: code.Description,
+					Value:    code.ID + "|" + code.Code + "|" + code.AllOne,
+				})
+			}
+		}
+
 		// Go through all the saved IR codes
 		for _, code := range driver.config.Codes {
 			// If this IR code belongs to the group we're iterating through
@@ -232,15 +296,31 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 						DisplayClass: "danger",
 					},
 				},
+
+				suit.ActionList{ // Now, the buttons we can click to emit IR!
+					Name:    "switches", // This doesn't get sent back to c.Configuration, only PrimaryAction and SecondaryAction do. Tricky, eh?
+					Options: switches,   // The options we can click on, is the map of ActionListOption we created above (where we had to stick in our pipe) (hey, phrasing!)
+					PrimaryAction: &suit.ReplyAction{ // This is the main button. It could be a cancel button for all we care. It's a primary action button.
+						Name:         "blastrfon", // Similar to above. As it's a ReplyAction, it gets sent to c.Configuration. Notice a pattern here?
+						Label:        "On",        // The text that appears on the button
+						DisplayIcon:  "star",
+						DisplayClass: "danger",
+					},
+					SecondaryAction: &suit.ReplyAction{ // Secondary buttons appear alongside the primary button, but they're smaller (e.g. [          PRIMARY BUTTON          ][ SECONDARY ])
+						Name:         "blastrfoff",
+						Label:        "Off",
+						DisplayIcon:  "star",
+						DisplayClass: "danger",
+					},
+				},
 			},
-		},
-		)
+		})
 		codes = nil // We need to empty out our codes array, otherwise the next section will contain codes from the first group, in addition to the second group
 	}
 
 	// Now that we've looped and got our sections, it's time to build the actual screen
 	screen := suit.ConfigurationScreen{
-		Title:    "Saved IR Codes",
+		Title:    "Saved IR / RF Codes",
 		Sections: sections, // Our sections. Contains all the buttons and everything!
 		Actions: []suit.Typed{ // Actiosn you can take on this page
 			suit.CloseAction{ // Here we go! This takes a label and probably a DisplayIcon and DisplayClass and just takes you back to the main screen. Not YOUR main screen though, so use a ReplyAction with a "" name to go back to YOUR menu
@@ -252,8 +332,14 @@ func (c *configService) list() (*suit.ConfigurationScreen, error) {
 				DisplayClass: "success",
 				DisplayIcon:  "asterisk",
 			},
+			suit.ReplyAction{ // Reply action. Same as the rest
+				Label:        "New RF Code",
+				Name:         "newrf", // Back in c.Configuration, show the new code UI
+				DisplayClass: "success",
+				DisplayIcon:  "wifi",
+			},
 			suit.ReplyAction{ // You can have as many ReplyActions as you like (I think) and it'll squeeze them in side by side
-				Label:        "New IR Group",
+				Label:        "New Group",
 				Name:         "newgroup",
 				DisplayClass: "default",
 				DisplayIcon:  "asterisk",
@@ -353,6 +439,114 @@ func (c *configService) new(config *OrviboDriverConfig) (*suit.ConfigurationScre
 			suit.ReplyAction{
 				Label:        "Start Learning",
 				Name:         "save",
+				DisplayClass: "success",
+				DisplayIcon:  "star",
+			},
+		},
+	}
+
+	return &screen, nil
+}
+
+// Shows the UI to learn a new IR code
+func (c *configService) newrf(config *OrviboDriverConfig) (*suit.ConfigurationScreen, error) {
+
+	// What radio options we're going to show. Are you seeing a pattern here now? The UI is rather easy once you do it for a while
+	// If you want to know what options the UI supports, and what values you can use with them, check out https://github.com/ninjasphere/go-ninja/blob/master/suit/screen.go
+	var allones []suit.RadioGroupOption
+	var groups []suit.RadioGroupOption
+
+	// Add a new RadioGroupOption to our list. This one blasts from All AllOnes connected ("ALL" is a special MAC Address in go-orvibo)
+	allones = append(allones, suit.RadioGroupOption{
+		Title:       "All Connected AllOnes",
+		Value:       "ALL",
+		DisplayIcon: "globe",
+	})
+
+	// Loop through the groups we've got
+	for _, codegroup := range driver.config.CodeGroups {
+		groups = append(groups, suit.RadioGroupOption{ // Add a new radio buton
+			Title:       codegroup.Name,
+			Value:       codegroup.Name,
+			DisplayIcon: "folder-open",
+		},
+		)
+	}
+
+	// Loop through all Orvibo devices.
+	for _, allone := range driver.device {
+		// If it's an AllOne
+		if allone.Device.DeviceType == orvibo.ALLONE {
+			// Add a Radio button with our AllOne's name and MAC Address
+			allones = append(allones, suit.RadioGroupOption{
+				Title:       allone.Device.Name,
+				DisplayIcon: "play",
+				Value:       allone.Device.MACAddress,
+			},
+			)
+
+		}
+	}
+
+	title := "New RF Code" // Up here for readability
+
+	screen := suit.ConfigurationScreen{
+		Title: title,
+		Sections: []suit.Section{ // New array of sections
+			suit.Section{ // New section
+				Contents: []suit.Typed{
+					suit.StaticText{ // Some introductory text
+						Title: "About this screen",
+						Value: "Please enter a name and a description for this code. You must also pick an AllOne.",
+					},
+
+					suit.InputText{ // Textbox
+						Name:        "name",
+						Before:      "Name for this code",
+						Placeholder: "Kitchen On", // Placeholder is the faded text that appears inside a textbox, giving you a hint as to what to type in
+						Value:       "",
+					},
+					suit.InputText{
+						Name:        "description",
+						Before:      "Code Description",
+						Placeholder: "Turn Kitchen Light On",
+						Value:       "",
+					},
+					suit.InputText{ // Textbox
+						Name:        "id",
+						Before:      "Channel ID",
+						Placeholder: "Must be in hex, six characters long. For example: 3ef5ee", // Placeholder is the faded text that appears inside a textbox, giving you a hint as to what to type in
+						Value:       "3ef5ee",
+					},
+					suit.InputText{ // Textbox
+						Name:        "data",
+						Before:      "Data",
+						Placeholder: "Data that is sent along with the Channel ID. Must be in hex: daaeeb", // Placeholder is the faded text that appears inside a textbox, giving you a hint as to what to type in
+						Value:       "daaeeb",
+					},
+
+					suit.RadioGroup{
+						Title:   "Select an AllOne to blast from",
+						Name:    "allone",
+						Options: allones, // We created our radio group before, and now we put it in here
+					},
+					suit.RadioGroup{
+						Title:   "Select a group to add this code to",
+						Name:    "group",
+						Options: groups, // Same with our code groups
+					},
+				},
+			},
+		},
+		Actions: []suit.Typed{
+			suit.ReplyAction{ // This is not a CloseAction, because we want to go back to the list of IR codes, not back to the main menu. Hence why we use a ReplyAction with "list"
+				Label:        "Cancel",
+				Name:         "list",
+				DisplayClass: "default",
+			},
+			suit.ReplyAction{
+				Label:        "Add RF",
+				Name:         "saverf",
 				DisplayClass: "success",
 				DisplayIcon:  "star",
 			},
